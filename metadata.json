@@ -1,0 +1,8 @@
+{
+  "name": "LifeLog - AI Journal",
+  "description": "A cloud-native personal journaling application. Features a daily feed, goal tracking dashboard, and Gemini-powered 'Vibe Check' to analyze sentiment and color-code entries. Replaces legacy solutions with a modern, responsive React interface.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
