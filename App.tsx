@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AppView, JournalEntry, Goal, JournalTemplate } from './types';
 import { INITIAL_GOALS, INITIAL_TEMPLATES } from './constants';
 import { EntryCard } from './components/EntryCard';
@@ -9,12 +9,14 @@ import { Settings } from './components/Settings';
 import { EntryDetail } from './components/EntryDetail';
 import { AdvisorChat } from './components/AdvisorChat';
 import { 
-  Plus, 
-  LayoutGrid, 
-  Book, 
+  Plus,
+  LayoutGrid,
+  Book,
   Settings as SettingsIcon,
   Search,
-  MessageSquare
+  MessageSquare,
+  ArrowUpDown,
+  X
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -22,6 +24,9 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.FEED);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   
   // Customizable State
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -86,6 +91,38 @@ const App: React.FC = () => {
   useEffect(() => {
       if (templates.length > 0) localStorage.setItem('lifelog_templates', JSON.stringify(templates));
   }, [templates]);
+
+  const tagFilters = useMemo(() => {
+      const counts: Record<string, number> = {};
+      entries.forEach(entry => {
+          entry.tags?.forEach(tag => {
+              counts[tag] = (counts[tag] || 0) + 1;
+          });
+      });
+
+      return Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([tag, count]) => ({ tag, count }));
+  }, [entries]);
+
+  const filteredEntries = useMemo(() => {
+      const normalizedQuery = searchQuery.trim().toLowerCase();
+
+      return [...entries]
+        .filter(entry => {
+            const matchesTag = activeTag ? entry.tags?.includes(activeTag) : true;
+            if (!matchesTag) return false;
+
+            if (!normalizedQuery) return true;
+
+            const haystack = `${entry.title} ${entry.content} ${entry.tags?.join(' ')}`.toLowerCase();
+            return haystack.includes(normalizedQuery);
+        })
+        .sort((a, b) => {
+            const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
+            return sortDirection === 'desc' ? -diff : diff;
+        });
+  }, [activeTag, entries, searchQuery, sortDirection]);
 
 
   const handleSaveEntry = (entryData: Omit<JournalEntry, 'id'>) => {
@@ -199,16 +236,79 @@ const App: React.FC = () => {
         <div className="p-4 md:p-8 max-w-3xl mx-auto">
           {currentView === AppView.FEED && (
             <div className="space-y-6 pb-20 md:pb-0">
-               <div className="flex items-center justify-between mb-6">
-                 <h2 className="text-3xl font-bold text-white">Journal</h2>
-                 <span className="text-slate-500 text-sm font-medium">{entries.length} Entries</span>
+               <div className="flex items-start justify-between mb-4 flex-col md:flex-row md:items-center md:space-y-0 space-y-2">
+                 <div>
+                   <h2 className="text-3xl font-bold text-white">Journal</h2>
+                   <p className="text-slate-500 text-sm">Search and filter to revisit past reflections quickly.</p>
+                 </div>
+                 <span className="text-slate-500 text-sm font-medium bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">{filteredEntries.length} / {entries.length} entries</span>
                </div>
-               
-               {entries.map(entry => (
-                 <EntryCard 
-                    key={entry.id} 
-                    entry={entry} 
-                    compact={true} 
+
+               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg shadow-black/20">
+                 <div className="flex flex-col md:flex-row md:items-center gap-3">
+                   <div className="relative flex-1">
+                     <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                     <input
+                       type="text"
+                       value={searchQuery}
+                       onChange={(e) => setSearchQuery(e.target.value)}
+                       placeholder="Search by title, content, or tags"
+                       className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-9 py-2.5 text-sm text-white placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500"
+                     />
+                     {searchQuery && (
+                       <button
+                         onClick={() => setSearchQuery('')}
+                         className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white p-1 rounded"
+                         aria-label="Clear search"
+                       >
+                         <X className="w-4 h-4" />
+                       </button>
+                     )}
+                   </div>
+
+                   <div className="flex items-center gap-2">
+                     <button
+                       onClick={() => setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc')}
+                       className="flex items-center space-x-2 px-3 py-2 rounded-lg border border-slate-800 text-slate-200 bg-slate-950 hover:border-indigo-500/60 hover:text-white transition-colors"
+                     >
+                       <ArrowUpDown className="w-4 h-4" />
+                       <span className="text-xs font-semibold uppercase tracking-wide">{sortDirection === 'desc' ? 'Newest' : 'Oldest'} first</span>
+                     </button>
+                     <button
+                       onClick={() => { setActiveTag(null); setSearchQuery(''); setSortDirection('desc'); }}
+                       className="px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:text-white hover:border-indigo-500/60 transition-colors text-xs font-semibold"
+                     >
+                       Reset filters
+                     </button>
+                   </div>
+                 </div>
+
+                 {tagFilters.length > 0 && (
+                   <div className="flex flex-wrap gap-2">
+                     {tagFilters.map(({ tag, count }) => (
+                       <button
+                         key={tag}
+                         onClick={() => setActiveTag(prev => prev === tag ? null : tag)}
+                         className={clsx(
+                           "px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-2 transition-colors",
+                           activeTag === tag
+                             ? "bg-indigo-600/20 border-indigo-500/60 text-indigo-200"
+                             : "bg-slate-950 border-slate-800 text-slate-300 hover:border-indigo-500/40 hover:text-white"
+                         )}
+                       >
+                         <span>#{tag}</span>
+                         <span className="text-[10px] text-slate-400">{count}</span>
+                       </button>
+                     ))}
+                   </div>
+                 )}
+               </div>
+
+               {filteredEntries.map(entry => (
+                 <EntryCard
+                    key={entry.id}
+                    entry={entry}
+                    compact={true}
                     onClick={() => handleEntryClick(entry)}
                  />
                ))}
@@ -217,6 +317,18 @@ const App: React.FC = () => {
                  <div className="text-center py-20">
                     <p className="text-slate-500">No entries yet. Start writing!</p>
                  </div>
+               )}
+
+               {entries.length > 0 && filteredEntries.length === 0 && (
+                  <div className="text-center py-16 border border-dashed border-slate-800 rounded-xl bg-slate-900/60">
+                    <p className="text-slate-400 font-medium">No entries match your filters.</p>
+                    <button
+                      onClick={() => { setActiveTag(null); setSearchQuery(''); setSortDirection('desc'); }}
+                      className="mt-3 text-sm text-indigo-300 hover:text-white"
+                    >
+                      Clear filters
+                    </button>
+                  </div>
                )}
             </div>
           )}
